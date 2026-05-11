@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(go version *)",
-      "Bash(go install *)",
-      "Bash(gopls version *)"
-    ]
-  }
-}
