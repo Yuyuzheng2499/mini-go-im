@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"net"
+	"strconv"
 )
 
 type Client struct {
@@ -18,7 +19,9 @@ func NewClient(serverIP string, serverPort int) *Client {
 		ServerPort: serverPort,
 	}
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", serverIP, serverPort))
+	// conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", serverIP, serverPort))
+	conn, err := net.Dial("tcp", net.JoinHostPort(serverIP, strconv.Itoa(serverPort)))
+
 	if err != nil {
 		fmt.Println("net.Dial error:", err)
 		return nil
