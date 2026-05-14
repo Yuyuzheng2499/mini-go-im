@@ -1,26 +1,29 @@
-package main
+package server
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"strings"
 	"sync"
+	"time"
 )
 
 type Server struct {
-	IP   string
-	Port int
+	IP        string
+	Port      int
 	OnlineMap map[string]*User // online user map
-	mapLock sync.RWMutex
-	Message chan string // message broadcasting channel
+	mapLock   sync.RWMutex
+	Message   chan string // message broadcasting channel
 }
 
 // creates a new server with the given IP and port
 func NewServer(ip string, port int) *Server {
 	server := &Server{
-		IP:   ip,
-		Port: port,
+		IP:        ip,
+		Port:      port,
 		OnlineMap: make(map[string]*User),
-		Message: make(chan string),
+		Message:   make(chan string),
 	}
 	return server
 }
@@ -28,7 +31,7 @@ func NewServer(ip string, port int) *Server {
 // starts the server and listens for incoming connections
 func (s *Server) Start() {
 	// socket listen
-	listener, err :=net.Listen("tcp", fmt.Sprintf("%s:%d", s.IP, s.Port))
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.IP, s.Port))
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		return
@@ -52,7 +55,6 @@ func (s *Server) Start() {
 		go s.Handler(conn)
 	}
 
-
 }
 
 // handles the business of the current connection
@@ -61,23 +63,56 @@ func (s *Server) Handler(conn net.Conn) {
 	fmt.Println("the connection is established successfully")
 
 	// create a new user
-	user := NewUser(conn)
+	user := NewUser(conn, s)
 
-	// user online,add user to online map
-	s.mapLock.Lock()
-	s.OnlineMap[user.Name] = user
-	s.mapLock.Unlock()
+	user.Online()
 
-	// broadcast message to other users
-	s.Broadcast(user, "已上线")
+	// channel to detect if the user is still alive
+	isLive := make(chan bool)
 
-	// block the handler, otherwise the handler will exit and the connection will be closed
-	select {}
+	// listen for messages from the user
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := conn.Read(buf)
+			if n == 0 {
+				user.Offline()
+				return
+			}
+
+			if err != nil && err != io.EOF {
+				fmt.Println("Error reading from connection:", err)
+				return
+			}
+
+			// extract the message from the buffer and broadcast it to other users
+			msg := strings.TrimSpace(string(buf[:n]))
+			user.DoMessage(msg)
+
+			isLive <- true // user is still alive
+		}
+	}()
+
+	for {
+		select {
+		case <-isLive:
+			// do nothing, to reset the timer
+		case <-time.After(300 * time.Second):
+			// already offline
+			conn.Write([]byte("你被踢了\n"))
+
+			// close
+			close(user.C)
+			conn.Close()
+
+			return
+		}
+	}
 }
 
-// broadcasts a message to all online users except the sender
+// broadcasts a message to all online users
 func (s *Server) Broadcast(user *User, msg string) {
-	sendMsg := "[" + user.Name + "]:" + user.Name + ":" + msg
+	sendMsg := "[" + user.Addr + "]:" + user.Name + ":" + msg
 
 	s.Message <- sendMsg
 }
@@ -85,7 +120,7 @@ func (s *Server) Broadcast(user *User, msg string) {
 // listens for messages on the message channel and broadcasts them to all online users
 func (s *Server) ListenMessages() {
 	for {
-		msg := <- s.Message
+		msg := <-s.Message
 
 		// send message to all online users
 		s.mapLock.Lock()
