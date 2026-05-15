@@ -17,7 +17,12 @@ func main() {
 		fmt.Println(">>>>>>>链接服务器失败...")
 		return
 	}
+	// 单独开一个goroutine去处理server的回执消息
+	go client.DealResponse()
+
 	fmt.Println(">>>>>>>链接服务器成功...")
 
-	select {}
+	// 启动客户端的业务
+	client.Run()
+
 }
